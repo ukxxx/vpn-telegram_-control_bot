@@ -11,6 +11,10 @@ This Python script is a VPN management Telegram bot that uses the telebot librar
 
     pip install telebot paramiko matplotlib
 
+    Or just use:
+
+    pip install -r requirements.txt
+
 ## Configuration
 
     Create a config.json file in the same directory as the script. The contents of the file should be in the following format:
@@ -27,11 +31,6 @@ This Python script is a VPN management Telegram bot that uses the telebot librar
     }
 
     Replace YOUR_BOT_TOKEN, YOUR_VPN_SERVER_IP, YOUR_VPN_SERVER_LOGIN, and YOUR_VPN_SERVER_PASSWORD with the corresponding values. Add Telegram user IDs you want to grant access to the bot in the users array. List the VPN client names in the clients array.
-
-    Make sure the following files are in the same directory as the script:
-        vpnbotlog.txt: This file stores logs of user actions and bot events.
-        spddata.csv: This file stores the speed test data in CSV format.
-        graph.png: This file will be used to store the speed history graph.
 
 ## Usage
 
