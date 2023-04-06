@@ -2,7 +2,7 @@
 
 ## Overview
 
-This Python script is a VPN management Telegram bot that uses the telebot library to interact with users. The bot connects to the server via SSH and provides the functionality to manage a Strangswan VPN server , perform speed tests using Ookla speedtest, and display server statistics. It can also show a graph of the speed test history.
+This Python script is a VPN management Telegram bot that uses the telebot library to interact with users. The bot connects to the server via SSH and provides the functionality to manage a Strongswan VPN server , perform speed tests using Ookla speedtest, and display server statistics. It can also show a graph of the speed test history.
 
 ## Installation
 
