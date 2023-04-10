@@ -12,7 +12,7 @@ import telebot
 
 matplotlib.use('Agg')
 
-# os.chdir('PATH_TO_FOLDER') # Uncomment and replace PATH_TO_FOLDER with your actual pat in case of environment do not gives you full path to the working directory
+# os.chdir('PATH_TO_FOLDER') # Uncomment and replace PATH_TO_FOLDER with your actual path in case of environment do not gives you full path to the working directory
 log_file = os.path.join(os.getcwd(), 'vpnbotlog.txt')
 spd_file = os.path.join(os.getcwd(), 'spddata.csv')
 graph_file = os.path.join(os.getcwd(), 'graph.png')
