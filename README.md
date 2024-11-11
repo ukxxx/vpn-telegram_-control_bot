@@ -17,12 +17,12 @@ This Python script is a VPN management Telegram bot that uses the telebot librar
 
     json
 
-    {
-        "ip": "YOUR_VPN_SERVER_IP",
-        "login": "YOUR_VPN_SERVER_LOGIN",
-        "users": [123456789, 987654321],
-        "clients": ["client1", "client2"]
-    }
+        {
+            "ip": "YOUR_VPN_SERVER_IP",
+            "login": "YOUR_VPN_SERVER_LOGIN",
+            "users": [123456789, 987654321],
+            "clients": ["client1", "client2"]
+        }
 
     Replace YOUR_VPN_SERVER_IP and YOUR_VPN_SERVER_LOGIN with the corresponding values. Add Telegram user IDs you want to grant access to the bot in the users array. List the VPN client names in the clients array.
 
@@ -32,8 +32,8 @@ This Python script is a VPN management Telegram bot that uses the telebot librar
 
     Add the following lines to the .env file:
 
-    TELEGRAM_TOKEN=YOUR_TELEGRAM_BOT_TOKEN
-    SSH_PASSWORD=YOUR_SSH_PASSWORD
+        TELEGRAM_TOKEN=YOUR_TELEGRAM_BOT_TOKEN
+        SSH_PASSWORD=YOUR_SSH_PASSWORD
 
     Replace YOUR_TELEGRAM_BOT_TOKEN and YOUR_SSH_PASSWORD with your actual Telegram bot token and SSH password.
 
@@ -41,7 +41,7 @@ This Python script is a VPN management Telegram bot that uses the telebot librar
 
 To run the bot, execute the script using Python:
 
-python main.py
+    python main.py
 
 The bot understands the following commands:
 
