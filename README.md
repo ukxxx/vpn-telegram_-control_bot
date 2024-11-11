@@ -62,4 +62,4 @@ Thanks a lot to the developers of pytelegrambotapi, paramiko, matplotlib, and py
 
 ## Contact
 
-If you have any questions or need assistance, feel free to open an issue or contact the repository owner..
+If you have any questions or need assistance, feel free to open an issue or contact the repository owner.
