@@ -9,10 +9,6 @@ This Python script is a VPN management Telegram bot that uses the telebot librar
     Make sure you have Python 3.6 or higher installed on your machine.
     Install required dependencies using pip:
 
-    pip install telebot paramiko matplotlib
-
-    Or just use:
-
     pip install -r requirements.txt
 
 ## Configuration
@@ -22,15 +18,24 @@ This Python script is a VPN management Telegram bot that uses the telebot librar
     json
 
     {
-        "token": "YOUR_BOT_TOKEN",
         "ip": "YOUR_VPN_SERVER_IP",
         "login": "YOUR_VPN_SERVER_LOGIN",
-        "password": "YOUR_VPN_SERVER_PASSWORD",
-        "users": [ALLOWED_USER_IDS],
-        "clients": ["CLIENT1", "CLIENT2", ...]
+        "users": [123456789, 987654321],
+        "clients": ["client1", "client2"]
     }
 
-    Replace YOUR_BOT_TOKEN, YOUR_VPN_SERVER_IP, YOUR_VPN_SERVER_LOGIN, and YOUR_VPN_SERVER_PASSWORD with the corresponding values. Add Telegram user IDs you want to grant access to the bot in the users array. List the VPN client names in the clients array.
+    Replace YOUR_VPN_SERVER_IP and YOUR_VPN_SERVER_LOGIN with the corresponding values. Add Telegram user IDs you want to grant access to the bot in the users array. List the VPN client names in the clients array.
+
+    The bot requires certain sensitive data to be set as environment variables. Using the python-dotenv package, you can store these variables in a .env file in the same directory as your script.
+
+    Create a file named .env in the same directory as your Python script.
+
+    Add the following lines to the .env file:
+
+    TELEGRAM_TOKEN=YOUR_TELEGRAM_BOT_TOKEN
+    SSH_PASSWORD=YOUR_SSH_PASSWORD
+
+    Replace YOUR_TELEGRAM_BOT_TOKEN and YOUR_SSH_PASSWORD with your actual Telegram bot token and SSH password.
 
 ## Usage
 
