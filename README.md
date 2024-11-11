@@ -58,7 +58,7 @@ The script contains several functions to handle different bot commands, as well 
 
 ## Acknowledgments
 
-Thanks to the developers of pytelegrambotapi, paramiko, matplotlib, and python-dotenv for their excellent libraries.
+Thanks a lot to the developers of pytelegrambotapi, paramiko, matplotlib, and python-dotenv for their excellent libraries.
 
 ## Contact
 
