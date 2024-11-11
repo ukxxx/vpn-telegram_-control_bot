@@ -54,7 +54,7 @@ The bot understands the following commands:
 
 ## Functions
 
-The script contains several functions to handle different bot commands, as well as utility functions for managing the VPN server and performing speed tests. The main function main() starts the bot and handles connection issues with Telegram.
+The script contains several functions to handle different bot commands, as well as utility functions for managing the VPN server and performing speed tests.
 
 ## Acknowledgments
 
