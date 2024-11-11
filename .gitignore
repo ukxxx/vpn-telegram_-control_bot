@@ -3,3 +3,4 @@ vpnbotlog.txt
 graph.png
 config.json
 .venv/
+.env

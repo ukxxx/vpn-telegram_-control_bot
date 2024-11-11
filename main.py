@@ -3,208 +3,270 @@ import json
 import os
 import socket
 import time
+import logging
+import re
 from datetime import datetime
+from typing import Optional, Tuple
+from functools import wraps
 
+from dotenv import load_dotenv
 import matplotlib
 import matplotlib.pyplot as plt
 import paramiko
 import telebot
 
+load_dotenv()
+
 matplotlib.use('Agg')
 
-# os.chdir('PATH_TO_FOLDER') # Uncomment and replace PATH_TO_FOLDER with your actual path in case of environment do not gives you full path to the working directory
-log_file = os.path.join(os.getcwd(), 'vpnbotlog.txt')
-spd_file = os.path.join(os.getcwd(), 'spddata.csv')
-graph_file = os.path.join(os.getcwd(), 'graph.png')
+# Configure logging
+logging.basicConfig(
+    filename='vpnbotlog.txt',
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 
+# Constants for file paths
+SPD_FILE = os.path.join(os.getcwd(), 'spddata.csv')
+GRAPH_FILE = os.path.join(os.getcwd(), 'graph.png')
+
+# Custom exception for file-related errors
 class FileError(Exception):
     def __init__(self, message):
         super().__init__(message)
 
+# Load configuration
+config = {}
 try:
     with open('config.json', 'r') as file:
         config = json.load(file)
-    bot = telebot.TeleBot(config['token'])
-except:
-     raise FileError("There is no config.json file or file is corrupted.")
+except FileNotFoundError:
+    raise FileError("The config.json file is missing.")
+except json.JSONDecodeError:
+    raise FileError("The config.json file is corrupted or contains invalid JSON.")
 
+# Securely retrieve sensitive data from environment variables
+config['token'] = os.environ.get('TELEGRAM_TOKEN')
+config['password'] = os.environ.get('SSH_PASSWORD')
+
+if not config['token'] or not config['password']:
+    raise FileError("Missing environment variables for TELEGRAM_TOKEN or SSH_PASSWORD.")
+
+bot = telebot.TeleBot(config['token'])
+
+# Help message
 HELP = """
 /start - run the bot
 /help - show this help
-/reboot - restart server 
+/reboot - restart server
 /speedtest - check internet speed
 /spdhist - view speed history
-/stats - display statistics"""
+/stats - display statistics
+"""
 
-# Function to write logs to a log file
-def write_log(message, action):
-    with open(log_file, 'a', encoding='utf-8') as log:
-        time_str = datetime.now().strftime('%X %d %b %Y')
-        if message == None:
-            log.write(f"{time_str} {action}.\n")
-        else:
-            log.write(f"{time_str} user {message.chat.username} {action}.\n")
+# Rate limiting decorator
+user_last_activity = {}
 
-# Function to send command to the server via SSH
-def send_show_command(ip, username, password, command, max_bytes=60000, short_pause=1):
-    cl = paramiko.SSHClient()
-    cl.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    cl.connect(hostname=ip, username=username, password=password, look_for_keys=False, allow_agent=False)
+def rate_limit(func):
+    @wraps(func)
+    def wrapper(message):
+        user_id = message.chat.id
+        current_time = time.time()
+        if user_id in user_last_activity and current_time - user_last_activity[user_id] < 1:  # 1 second limit
+            return  # Ignore the message
+        user_last_activity[user_id] = current_time
+        return func(message)
+    return wrapper
 
-    with cl.invoke_shell() as ssh:
-        time.sleep(short_pause)
-        ssh.recv(max_bytes)
-        ssh.send(command)
-        ssh.settimeout(5)
-        ssh.send("\n")
+# Helper functions
+def send_user_message(chat_id, text):
+    bot.send_message(chat_id, text)
 
-        output = ""
-        while True:
-            try:
-                part = ssh.recv(max_bytes).decode("utf-8")
-                output += part
-                time.sleep(0.5)
-            except socket.timeout:
-                break
-    return output
+def parse_speedtest_json(output: str) -> Tuple[Optional[float], Optional[float]]:
+    try:
+        data = json.loads(output)
+        download_speed = data['download']['bandwidth'] * 8 / 1_000_000  # Convert to Mbps
+        upload_speed = data['upload']['bandwidth'] * 8 / 1_000_000  # Convert to Mbps
+        return download_speed, upload_speed
+    except (json.JSONDecodeError, KeyError) as e:
+        logging.error(f"Failed to parse speedtest JSON output: {e}")
+        return None, None
 
-# Message handler for unauthorized users
+def write_speed_data(date_str: str, download_speed: Optional[float], upload_speed: Optional[float]):
+    file_exists = os.path.isfile(SPD_FILE)
+    with open(SPD_FILE, 'a', newline='') as file:
+        writer = csv.writer(file)
+        if not file_exists:
+            writer.writerow(['date', 'download_speed', 'upload_speed'])
+        writer.writerow([date_str, download_speed, upload_speed])
+
+def execute_ssh_command(
+    ip: str,
+    username: str,
+    password: str,
+    command: str,
+    timeout: int = 120
+) -> Optional[str]:
+    try:
+        with paramiko.SSHClient() as cl:
+            cl.load_system_host_keys()
+            cl.set_missing_host_key_policy(paramiko.RejectPolicy())
+            cl.connect(
+                hostname=ip,
+                username=username,
+                password=password,
+                look_for_keys=False,
+                allow_agent=False,
+                timeout=10
+            )
+            stdin, stdout, stderr = cl.exec_command(command, timeout=timeout)
+            output = stdout.read().decode('utf-8')
+            error = stderr.read().decode('utf-8')
+            if error:
+                logging.error(f"Error executing command: {error}")
+            return output
+    except (paramiko.AuthenticationException, paramiko.SSHException, socket.error, Exception) as e:
+        logging.error(f"SSH command execution failed: {e}")
+        return None
+
+# Security check for unauthorized users
 @bot.message_handler(func=lambda message: message.chat.id not in config['users'])
 def security_check(message):
-    write_log(message, "tried to run the bot")
-    bot.send_message(message.chat.id, 'Not allowed to talk to strangers.')
+    logging.warning(f"Unauthorized access attempt by user {message.chat.username}")
+    send_user_message(message.chat.id, 'Not allowed to talk to strangers.')
 
-# Message handler for /help and /start commands
+# /help and /start command handler
 @bot.message_handler(commands=['help', 'start'])
+@rate_limit
 def helpme(message):
-    write_log(message, "opened help")
-    bot.send_message(message.chat.id, HELP)
+    logging.info(f"User {message.chat.username} requested help")
+    send_user_message(message.chat.id, HELP)
 
-# Message handler for /reboot command
+# /reboot command handler
 @bot.message_handler(commands=['reboot'])
+@rate_limit
 def reboot(message):
-    write_log(message, "rebooted server")
-    message_chat = 'Rebooting...'
-    bot.send_message(message.chat.id, message_chat)
-    send_show_command(config['ip'], config['login'], config['password'], 'sudo reboot')
+    try:
+        logging.info(f"User {message.chat.username} initiated reboot")
+        send_user_message(message.chat.id, 'Rebooting...')
+        result = execute_ssh_command(config['ip'], config['login'], config['password'], 'sudo reboot')
+        if result is not None:
+            send_user_message(message.chat.id, "Reboot command sent successfully.")
+        else:
+            send_user_message(message.chat.id, "Failed to send reboot command.")
+    except Exception as e:
+        logging.error(f"Error in reboot handler: {e}")
+        send_user_message(message.chat.id, "An error occurred while trying to reboot the server.")
 
-# Message handler for /speedtest command
+# /speedtest command handler
 @bot.message_handler(commands=['speedtest'])
+@rate_limit
 def speedtest(message):
-    write_log(message, "measured speed")
-    bot.send_message(message.chat.id, 'Measuring. It usually takes about 1 minute...')
-    command_result_unsplitted = send_show_command(config['ip'], config['login'], config['password'], 'speedtest')
-    command_result = command_result_unsplitted.split()
+    try:
+        logging.info(f"User {message.chat.username} requested speedtest")
+        send_user_message(message.chat.id, 'Measuring. It usually takes about 1 minute...')
+        # Use JSON output for reliable parsing
+        speedtest_command = 'speedtest --accept-license --accept-gdpr --format=json'
+        result = execute_ssh_command(
+            config['ip'],
+            config['login'],
+            config['password'],
+            speedtest_command
+        )
+        if result:
+            download_speed, upload_speed = parse_speedtest_json(result)
+            if download_speed is not None:
+                send_user_message(message.chat.id, f"Download: {download_speed:.2f} Mbps")
+            else:
+                send_user_message(message.chat.id, "Download speed not found.")
 
-    bot.send_message(message.chat.id, 'Upload:')
-    last_occurrence = -1
-    element_found = True
-    while element_found:
-        try:
-            last_occurrence = command_result.index('Upload:', last_occurrence + 1)
-        except ValueError:
-            element_found = False
-    last_occurrence += 1
-    message_chat = command_result[last_occurrence] + ' Mb\s'
-    bot.send_message(message.chat.id, message_chat)
+            if upload_speed is not None:
+                send_user_message(message.chat.id, f"Upload: {upload_speed:.2f} Mbps")
+            else:
+                send_user_message(message.chat.id, "Upload speed not found.")
 
-    up_speed = int(float(command_result[last_occurrence]))
+            if download_speed is not None or upload_speed is not None:
+                date_str = datetime.now().strftime('%d %b %H:%M')
+                write_speed_data(date_str, download_speed, upload_speed)
+            else:
+                send_user_message(message.chat.id, "Failed to parse speedtest results.")
+        else:
+            send_user_message(message.chat.id, "Failed to execute speedtest command.")
+    except Exception as e:
+        logging.error(f"Error in speedtest handler: {e}")
+        send_user_message(message.chat.id, "An error occurred while performing the speed test.")
 
-    bot.send_message(message.chat.id, 'Download:')
-    last_occurrence = -1
-    element_found = True
-    while element_found:
-        try:
-            last_occurrence = command_result.index('Download:', last_occurrence + 1)
-        except ValueError:
-            element_found = False
-    last_occurrence += 1
-    message_chat = command_result[last_occurrence] + ' Mb\s'
-    bot.send_message(message.chat.id, message_chat)
-
-    down_speed = int(float(command_result[last_occurrence]))
-
-    with open(spd_file, 'a', newline="") as file:
-        time_str = datetime.now().strftime('%d %b %H:%M')# + 'h'
-        data_to_write = (time_str, down_speed, up_speed)
-        writer = csv.writer(file)
-        writer.writerow(data_to_write)
-
-# Message handler for /test command
-@bot.message_handler(commands=['test'])
-def test(message):
-    message_sent = datetime.now().strftime('%X %d %b %Y')
-    bot.send_message(message.chat.id, message_sent)
-
-# Message handler for /stats command
+# /stats command handler
 @bot.message_handler(commands=['stats'])
-def stat(message):
-    write_log(message, "collected stats")
-    message_chat = 'Collecting statistics...'
-    bot.send_message(message.chat.id, message_chat)
-    command_result_unsplitted = send_show_command(config['ip'], config['login'], config['password'], 'ipsec statusall')
-    command_result_unsplitted = command_result_unsplitted.lower()
-    command_result = command_result_unsplitted.split()
+@rate_limit
+def stats(message):
+    try:
+        logging.info(f"User {message.chat.username} requested stats")
+        send_user_message(message.chat.id, 'Collecting statistics...')
+        result = execute_ssh_command(config['ip'], config['login'], config['password'], 'ipsec statusall')
+        if result:
+            # Parse uptime information
+            uptime_match = re.search(r'uptime: (.+)', result)
+            if uptime_match:
+                uptime_info = uptime_match.group(1)
+                send_user_message(message.chat.id, f"Server uptime: {uptime_info}")
+            else:
+                send_user_message(message.chat.id, "Failed to parse uptime information.")
 
-    last_occurrence = -1
-    element_found = True
-    while element_found:
-        try:
-            last_occurrence = command_result.index(
-                'uptime:', last_occurrence + 1)
-        except ValueError:
-            element_found = False
-    last_occurrence += 1
-    message_chat = f"Server uptime: {command_result[last_occurrence]} {command_result[last_occurrence + 1]} since {command_result[last_occurrence + 4]} {command_result[last_occurrence + 3]} {command_result[last_occurrence + 6]} {command_result[last_occurrence + 5]}."
-    bot.send_message(message.chat.id, message_chat)
+            # Check client connections
+            for client in config['clients']:
+                client_pattern = re.compile(rf'{client}.*?ESTABLISHED.*?(\d+\.\d+\.\d+\.\d+)', re.DOTALL)
+                client_match = client_pattern.search(result)
+                if client_match:
+                    ip_address = client_match.group(1)
+                    send_user_message(message.chat.id, f"Client {client} is connected with IP: {ip_address}")
+                else:
+                    send_user_message(message.chat.id, f"Client {client} is not connected.")
+        else:
+            send_user_message(message.chat.id, "Failed to execute command to get stats.")
+    except Exception as e:
+        logging.error(f"Error in stats handler: {e}")
+        send_user_message(message.chat.id, "An error occurred while collecting statistics.")
 
-    for client in config['clients']:
-        try:
-            ip_address_unsplitted = command_result[command_result.index(
-                client) - 5]
-            ip_address_split_first = ip_address_unsplitted.split("...")
-            ip_address_split = ip_address_split_first[1].split("[")
-            message_chat = f"Client {client} connected {command_result[command_result.index(client) - 8]} {command_result[command_result.index(client) - 7]} ago.\nIP-address: {ip_address_split[0]}"
-            bot.send_message(message.chat.id, message_chat)
-        except ValueError:
-            message_chat = 0
-
-# Message handler for /spdhist command
+# /spdhist command handler
 @bot.message_handler(commands=['spdhist'])
+@rate_limit
 def spdhist(message):
-    result_down = {}
-    result_up = {}
-    with open(spd_file, 'r') as file:
-        spddata = csv.DictReader(file)
-        for row in spddata:
-            result_down[row['date']] = row['download_speed']
-            result_up[row['date']] = row['upload_speed']
+    try:
+        logging.info(f"User {message.chat.username} requested speed history")
+        if not os.path.isfile(SPD_FILE):
+            send_user_message(message.chat.id, "No speed data available to display.")
+            return
+        with open(SPD_FILE, 'r') as file:
+            data = list(csv.DictReader(file))
+            if not data:
+                send_user_message(message.chat.id, "No speed data available to display.")
+                return
+            dates = [row['date'] for row in data]
+            download_speeds = [float(row['download_speed']) if row['download_speed'] else None for row in data]
+            upload_speeds = [float(row['upload_speed']) if row['upload_speed'] else None for row in data]
 
-    xpoints = list(result_down.keys())
-    ypoints_down = list(map(int, list(result_down.values())))
-    ypoints_up = list(map(int, list(result_up.values())))
-    plt.title(label='Speed plot', loc='left')
-    plt.figure(facecolor='gray')
-    plt.plot(xpoints, ypoints_down, color='#4CAF50', marker='v', label='Download')
-    plt.plot(xpoints, ypoints_up, color='#FED700', marker='^', label='Upload')
-    plt.ylabel('Speed, Mb\s')
-    plt.xticks(rotation=30, ha='right')
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(graph_file)
-
-    bot.send_photo(message.chat.id, photo=open(graph_file, 'rb'))
+        plt.figure(facecolor='gray')
+        if any(download_speeds):
+            plt.plot(dates, download_speeds, color='#4CAF50', marker='v', label='Download')
+        if any(upload_speeds):
+            plt.plot(dates, upload_speeds, color='#FED700', marker='^', label='Upload')
+        plt.title('Speed plot', loc='left')
+        plt.ylabel('Speed, Mbps')
+        plt.xticks(rotation=30, ha='right')
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(GRAPH_FILE)
+        with open(GRAPH_FILE, 'rb') as photo:
+            bot.send_photo(message.chat.id, photo)
+    except Exception as e:
+        logging.error(f"Error in spdhist handler: {e}")
+        send_user_message(message.chat.id, "An error occurred while generating the speed history graph.")
 
 # Main function to run the bot
 def main():
-   
-    while True:
-        try:
-            bot.polling(none_stop=True)
-        except:
-            write_log(None, "Telegram connection has lost")
-            time.sleep(15)
-
+    bot.infinity_polling()
 
 if __name__ == '__main__':
     main()
