@@ -88,10 +88,11 @@ def parse_speedtest_json(output: str) -> Tuple[Optional[float], Optional[float]]
         data = json.loads(output)
         download_speed = data['download']['bandwidth'] * 8 / 1_000_000  # Convert to Mbps
         upload_speed = data['upload']['bandwidth'] * 8 / 1_000_000  # Convert to Mbps
-        return download_speed, upload_speed
+        result_url = data.get('result', {}).get('url')
+        return download_speed, upload_speed, result_url
     except (json.JSONDecodeError, KeyError) as e:
         logging.error(f"Failed to parse speedtest JSON output: {e}")
-        return None, None
+        return None, None, None
 
 def write_speed_data(date_str: str, download_speed: Optional[float], upload_speed: Optional[float]):
     file_exists = os.path.isfile(SPD_FILE)
@@ -175,7 +176,7 @@ def speedtest(message):
             speedtest_command
         )
         if result:
-            download_speed, upload_speed = parse_speedtest_json(result)
+            download_speed, upload_speed, result_url = parse_speedtest_json(result)
             if download_speed is not None:
                 send_user_message(message.chat.id, f"Download: {download_speed:.2f} Mbps")
             else:
@@ -185,6 +186,11 @@ def speedtest(message):
                 send_user_message(message.chat.id, f"Upload: {upload_speed:.2f} Mbps")
             else:
                 send_user_message(message.chat.id, "Upload speed not found.")
+                
+            if result_url is not None:
+                send_user_message(message.chat.id, f"Result URL: {result_url}")
+            else:
+                send_user_message(message.chat.id, "Result URL not found.")
 
             if download_speed is not None or upload_speed is not None:
                 date_str = datetime.now().strftime('%d %b %H:%M')
