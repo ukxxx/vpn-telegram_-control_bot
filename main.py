@@ -188,7 +188,7 @@ def speedtest(message):
                 send_user_message(message.chat.id, "Upload speed not found.")
                 
             if result_url is not None:
-                send_user_message(message.chat.id, f"Result URL: {result_url}")
+                send_user_message(message.chat.id, f"Result: {result_url}")
             else:
                 send_user_message(message.chat.id, "Result URL not found.")
 
